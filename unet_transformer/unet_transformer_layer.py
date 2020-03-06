@@ -98,10 +98,10 @@ class UNetTransformerEncoderLayer(nn.Module):
         Args:
             x (Tensor): input to the layer of shape `(seq_len, batch, embed_dim)`
             encoder_padding_mask (ByteTensor): binary ByteTensor of shape
-                `(batch, src_len_after_maxpool)` where padding elements are indicated by ``1``.
-                src_len_after_conv = n_steps if type='same'
-                src_len_after_conv = n_steps//2 if type='down'
-                src_len_after_conv = n_steps * 2 (+1) if type='up'
+                `(batch, src_len)` where padding elements are indicated by ``1``.
+                src_len = n_steps if type='same'
+                src_len = n_steps if type='down' and it maxpooled inside fowrard call
+                src_len = n_steps * 2 (+1) if type='up'
             attn_mask (ByteTensor): binary tensor of shape (T_tgt, T_src), where
                 T_tgt is the length of query, while T_src is the length of key,
                 though here both query and key is x here,
@@ -173,7 +173,7 @@ class UNetTransformerEncoderLayer(nn.Module):
         x = residual + x
         if encoder_padding_mask is not None:
             x = x.masked_fill(encoder_padding_mask, 0.)
-            encoder_padding_mask = encoder_padding_mask.transpose(0, 1).squeeze()
+            encoder_padding_mask = encoder_padding_mask.transpose(0, 1).squeeze(-1)
         return x, encoder_padding_mask
 
     def _get_next_mask(self, pad_mask):
@@ -183,9 +183,9 @@ class UNetTransformerEncoderLayer(nn.Module):
         :return:
         """
         if self.maxpool is None: return pad_mask
-        pad_mask = pad_mask.unsqueeze(-1).transpose(1, 2)
+        pad_mask = pad_mask.unsqueeze(2).transpose(1, 2)
         non_pad_mask = self.maxpool((~pad_mask).float()).bool()  # ~ is logical NOT
-        pad_mask = ~non_pad_mask.squeeze()
+        pad_mask = ~non_pad_mask.squeeze(1)
         return pad_mask
 
 

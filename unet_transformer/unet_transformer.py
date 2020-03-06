@@ -410,9 +410,9 @@ class UNetTransformerEncoder(FairseqEncoder):
 
         # padding_mask == layer_padding_masks[0] == initial padding mask
         x, _ = self.output_layer(x, encoder_padding_mask)  # output layer has the same mask as input layer
-        if return_all_hiddens: encoder_states.append(x)
-
-        assert len(encoder_states) == self.num_layers
+        if return_all_hiddens:
+            encoder_states.append(x)
+            assert len(encoder_states) == self.num_layers
 
         return EncoderOut(
             encoder_out=x,  # T x B x C
