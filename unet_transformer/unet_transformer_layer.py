@@ -132,7 +132,7 @@ class UNetTransformerEncoderLayer(nn.Module):
 
             x = self.conv_out(x.transpose(1, 2)).transpose(1, 2)
             if self.type_ == 'down':
-                x = self.maxpool(x)
+                x = self.maxpool(x.contiguous())
                 encoder_padding_mask = self._get_next_mask(encoder_padding_mask)
 
             x = x.permute(2, 0, 1)  # (seq_len, batch, embed_dim)
@@ -165,7 +165,6 @@ class UNetTransformerEncoderLayer(nn.Module):
             x = x.masked_fill(encoder_padding_mask, 0.)
 
         residual = x
-        # import pdb; pdb.set_trace()
         x = self.activation_fn(self.fc1(x))
         x = F.dropout(x, p=float(self.activation_dropout), training=self.training)
         x = self.fc2(x)
@@ -184,7 +183,7 @@ class UNetTransformerEncoderLayer(nn.Module):
         """
         if self.maxpool is None: return pad_mask
         pad_mask = pad_mask.unsqueeze(2).transpose(1, 2)
-        non_pad_mask = self.maxpool((~pad_mask).float()).bool()  # ~ is logical NOT
+        non_pad_mask = self.maxpool((~pad_mask).float().contiguous()).bool()  # ~ is logical NOT
         pad_mask = ~non_pad_mask.squeeze(1)
         return pad_mask
 
