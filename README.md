@@ -34,6 +34,8 @@ fairseq-train\
      data-bin/wmt17_en_de \
      --user-dir ./unet_transformer \
      --arch unet_transformer --share-decoder-input-output-embed \
+     --encoder_embed_dim 416 \
+     --encoder_ffn_embed_dim 1664 \
      --optimizer adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0 \
      --lr 5e-4 --lr-scheduler inverse_sqrt --warmup-updates 4000\
      --dropout 0.3 --weight-decay 0.0001 \
@@ -51,7 +53,7 @@ fairseq-train\
 Training script above uses all available GPUs by default.
 Parameter `--max-tokens 3200` is suited for a setup of 3x GTX 1080,
 you may want to reduce this parameters and
-compensate it via `--update-freq`.
+compensate it via `--update-freq`. Number of trainable parameters: 47 531 328.
 
 If you see `ValueError: Cannot register duplicate model (unet_transformer)`
 it probably means that you already registered the model. Just remove `--user-dir`
