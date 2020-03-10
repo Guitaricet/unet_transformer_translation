@@ -34,8 +34,8 @@ fairseq-train\
      data-bin/wmt17_en_de \
      --user-dir ./unet_transformer \
      --arch unet_transformer --share-decoder-input-output-embed \
-     --encoder_embed_dim 416 \
-     --encoder_ffn_embed_dim 1664 \
+     --encoder-embed-dim 416 \
+     --encoder-ffn-embed-dim 1664 \
      --optimizer adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0 \
      --lr 5e-4 --lr-scheduler inverse_sqrt --warmup-updates 4000\
      --dropout 0.3 --weight-decay 0.0001 \

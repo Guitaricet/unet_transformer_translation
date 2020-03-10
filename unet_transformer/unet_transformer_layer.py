@@ -161,8 +161,7 @@ class UNetTransformerEncoderLayer(nn.Module):
         # FFN
 
         if encoder_padding_mask is not None:
-            encoder_padding_mask = encoder_padding_mask.transpose(0, 1).unsqueeze(-1)
-            x = x.masked_fill(encoder_padding_mask, 0.)
+            x = x.masked_fill(encoder_padding_mask.transpose(0, 1).unsqueeze(-1), 0.)
 
         residual = x
         x = self.activation_fn(self.fc1(x))
@@ -171,8 +170,7 @@ class UNetTransformerEncoderLayer(nn.Module):
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = residual + x
         if encoder_padding_mask is not None:
-            x = x.masked_fill(encoder_padding_mask, 0.)
-            encoder_padding_mask = encoder_padding_mask.transpose(0, 1).squeeze(-1)
+            x = x.masked_fill(encoder_padding_mask.transpose(0, 1).unsqueeze(-1), 0.)
         return x, encoder_padding_mask
 
     def _get_next_mask(self, pad_mask):
