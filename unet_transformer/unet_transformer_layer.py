@@ -45,14 +45,14 @@ class UNetTransformerEncoderLayer(nn.Module):
         if type_ == 'up':
             # double size of output
             self.conv = nn.ConvTranspose1d(
-                self.input_dim, self.input_dim, kernel_size=3, stride=2, padding=1, groups=self.input_dim)
+                self.input_dim, self.input_dim, kernel_size=3, stride=2, padding=1)
         elif type_ == 'down':
             # half size of output
-            self.conv = nn.Conv1d(self.input_dim, self.input_dim, kernel_size=3, padding=1, groups=self.input_dim)
+            self.conv = nn.Conv1d(self.input_dim, self.input_dim, kernel_size=3, padding=1)
             self.maxpool = nn.MaxPool1d(kernel_size=3, stride=2, padding=1)
         elif type_ == 'same':
             # keep size of output the same
-            self.conv = nn.Conv1d(self.input_dim, self.input_dim, kernel_size=3, padding=1, groups=self.input_dim)
+            self.conv = nn.Conv1d(self.input_dim, self.input_dim, kernel_size=3, padding=1)
         elif type_ == 'none':
             pass
         else:
