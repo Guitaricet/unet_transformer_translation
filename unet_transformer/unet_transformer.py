@@ -1,3 +1,7 @@
+"""
+UnetTransformerModel is based on fairseq TransformerModel
+"""
+
 import math
 from typing import Dict, List, Optional, Tuple
 
@@ -494,8 +498,8 @@ def Embedding(num_embeddings, embedding_dim, padding_idx):
 @register_model_architecture("unet_transformer", "unet_transformer")
 def base_architecture(args):
     args.encoder_embed_path = getattr(args, "encoder_embed_path", None)
-    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 416)
-    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 1664)
+    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 448)
+    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 1792)
     args.encoder_layers = getattr(args, "encoder_layers", 6)
     args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 8)
     args.encoder_learned_pos = getattr(args, "encoder_learned_pos", False)
