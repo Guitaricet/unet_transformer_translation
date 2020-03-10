@@ -1,4 +1,5 @@
 MODEL_NAME=transformer_en_de_toy
+rm -rf checkpoints/$MODEL_NAME
 mkdir -p checkpoints/$MODEL_NAME
 
 fairseq-train\
@@ -13,8 +14,9 @@ fairseq-train\
      --optimizer adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0 \
      --lr 5e-4 --lr-scheduler inverse_sqrt --warmup-updates 4000\
      --criterion label_smoothed_cross_entropy --label-smoothing 0.1 \
+     --ddp-backend=no_c10d \
      --max-tokens 1000 \
-     --max-update 100 \
+     --max-update 50 \
      --save-dir checkpoints/$MODEL_NAME \
      --eval-bleu \
      --eval-bleu-args '{"beam": 2, "max_len_a": 1.2, "max_len_b": 10}' \

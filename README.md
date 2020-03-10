@@ -43,11 +43,12 @@ fairseq-train\
      --max-tokens 3200 \
      --max-update 300000 \
      --save-dir checkpoints/$MODEL_NAME \
+     --ddp-backend=no_c10d \
      --eval-bleu \
      --eval-bleu-args '{"beam": 5, "max_len_a": 1.2, "max_len_b": 10}' \
      --eval-bleu-detok moses \
      --eval-bleu-remove-bpe \
-     --best-checkpoint-metric bleu --maximize-best-checkpoint-metric
+     --best-checkpoint-metric bleu --maximize-best-checkpoint-metric \
 ```
 
 Training script above uses all available GPUs by default.
@@ -55,6 +56,12 @@ Parameter `--max-tokens 3200` is suited for a setup of 3x GTX 1080,
 you may want to reduce this parameters and
 compensate it via `--update-freq`. Number of trainable parameters: 47 531 328.
 
+### Known Issues
+
 If you see `ValueError: Cannot register duplicate model (unet_transformer)`
 it probably means that you already registered the model. Just remove `--user-dir`
 from the train script.
+
+If you have `RuntimeError: ones needs to be contiguous` install PyTorch nightly.
+This is a [known bug](https://github.com/pytorch/pytorch/issues/33168)
+and it is fixed in PyTorch 1.5.
