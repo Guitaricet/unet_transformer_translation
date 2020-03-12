@@ -45,20 +45,19 @@ class UNetTransformerEncoderLayer(nn.Module):
         if type_ == 'up':
             # double size of output
             self.conv = nn.ConvTranspose1d(
-                self.input_dim, self.input_dim, kernel_size=3, stride=2, padding=1)
+                self.input_dim, self.model_dim, kernel_size=3, stride=2, padding=1)
         elif type_ == 'down':
             # half size of output
-            self.conv = nn.Conv1d(self.input_dim, self.input_dim, kernel_size=3, padding=1)
+            self.conv = nn.Conv1d(self.input_dim, self.model_dim, kernel_size=3, padding=1)
             self.maxpool = nn.MaxPool1d(kernel_size=3, stride=2, padding=1)
         elif type_ == 'same':
             # keep size of output the same
-            self.conv = nn.Conv1d(self.input_dim, self.input_dim, kernel_size=3, padding=1)
+            self.conv = nn.Conv1d(self.input_dim, self.model_dim, kernel_size=3, padding=1)
         elif type_ == 'none':
-            pass
+            raise NotImplementedError()
         else:
             raise ValueError(f"type_ should be one of: 'up', 'down', same'. Got '{type_}' instead")
 
-        self.conv_out = Linear(self.input_dim, self.model_dim)
         self.conv_norm = LayerNorm(self.model_dim)
 
         self.self_attn_layer_norm = LayerNorm(self.model_dim)
@@ -130,7 +129,6 @@ class UNetTransformerEncoderLayer(nn.Module):
 
                 x = self.conv(x, output_size=output_size)
 
-            x = self.conv_out(x.transpose(1, 2)).transpose(1, 2)
             if self.type_ == 'down':
                 x = self.maxpool(x.contiguous())
                 encoder_padding_mask = self._get_next_mask(encoder_padding_mask)
