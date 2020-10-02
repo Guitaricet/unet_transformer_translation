@@ -31,35 +31,57 @@ class UNetTransformerEncoderLayer(nn.Module):
                 activation_dropout
     """
 
-    def __init__(self, args, type_, input_dim=None, model_dim=None, ffn_hidden=None, conv_skip_connection=False):
+    def __init__(
+        self,
+        args,
+        type_,
+        input_dim=None,
+        model_dim=None,
+        ffn_hidden=None,
+        conv_skip_connection=False,
+        depthwise_conv=True,
+    ):
         super().__init__()
 
         self.input_dim = input_dim or args.encoder_embed_dim
         self.model_dim = model_dim or args.encoder_embed_dim
         self.ffn_hidden = ffn_hidden or args.encoder_ffn_embed_dim
         self.conv_skip_connection = conv_skip_connection
+        self.depthwise_conv = depthwise_conv
 
         self.type_ = type_
         self.conv = None
         self.maxpool = None
-        groups = self.model_dim  # use 1 for fast computation, use self.model_dim to be closer to the original paper
 
-        if type_ == 'up':
+        # use groups=1 for fast computation, use self.input_dim to be closer to the original paper
+        groups = 1
+        if self.depthwise_conv:
+            groups = self.input_dim
+
+        if type_ == "up":
             # double size of output
             self.conv = nn.ConvTranspose1d(
-                self.input_dim, self.model_dim, kernel_size=3, stride=2, padding=1, groups=groups)
-        elif type_ == 'down':
+                self.input_dim, self.input_dim, kernel_size=3, stride=2, padding=1, groups=groups
+            )
+        elif type_ == "down":
             # half size of output
-            self.conv = nn.Conv1d(self.input_dim, self.model_dim, kernel_size=3, padding=1, groups=groups)
+            self.conv = nn.Conv1d(
+                self.input_dim, self.input_dim, kernel_size=3, padding=1, groups=groups
+            )
             self.maxpool = nn.MaxPool1d(kernel_size=3, stride=2, padding=1)
-        elif type_ == 'same':
+        elif type_ == "same":
             # keep size of output the same
-            self.conv = nn.Conv1d(self.input_dim, self.model_dim, kernel_size=3, padding=1, groups=groups)
-        elif type_ == 'none':
+            self.conv = nn.Conv1d(
+                self.input_dim, self.input_dim, kernel_size=3, padding=1, groups=groups
+            )
+        elif type_ == "none":
             raise NotImplementedError()
         else:
             raise ValueError(f"type_ should be one of: 'up', 'down', same'. Got '{type_}' instead")
 
+        # we need conv_out to be able to keep convolution input_dim == output_dim
+        # which is needed for the depthwise convolutions (gropus==input_dim == output_dim)
+        self.conv_out = nn.Linear(self.input_dim, self.model_dim)
         self.conv_norm = LayerNorm(self.model_dim)
 
         self.self_attn_layer_norm = LayerNorm(self.model_dim)
@@ -115,11 +137,13 @@ class UNetTransformerEncoderLayer(nn.Module):
         """
         seq_len, batch_size, embed_dim = x.shape
 
+        # Maybe Convolution (double or half over time axis)
+
         if self.conv is not None:
             residual = x  # (seq_len, batch, embed_dim)
             x = x.permute(1, 2, 0)  # (batch, embed_dim, seq_len)
 
-            if self.type_ != 'up':
+            if self.type_ != "up":
                 x = self.conv(x)
             else:
                 # the main problem with 'up' layer is that we don't know the actual output size
@@ -131,7 +155,9 @@ class UNetTransformerEncoderLayer(nn.Module):
 
                 x = self.conv(x, output_size=output_size)
 
-            if self.type_ == 'down':
+            x = self.conv_out(x.transpose(1, 2)).transpose(1, 2)
+
+            if self.type_ == "down":
                 x = self.maxpool(x.contiguous())
                 encoder_padding_mask = self._get_next_mask(encoder_padding_mask)
 
@@ -161,7 +187,7 @@ class UNetTransformerEncoderLayer(nn.Module):
         # FFN
 
         if encoder_padding_mask is not None:
-            x = x.masked_fill(encoder_padding_mask.transpose(0, 1).unsqueeze(-1), 0.)
+            x = x.masked_fill(encoder_padding_mask.transpose(0, 1).unsqueeze(-1), 0.0)
 
         residual = x
         x = self.activation_fn(self.fc1(x))
@@ -170,7 +196,7 @@ class UNetTransformerEncoderLayer(nn.Module):
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = residual + x
         if encoder_padding_mask is not None:
-            x = x.masked_fill(encoder_padding_mask.transpose(0, 1).unsqueeze(-1), 0.)
+            x = x.masked_fill(encoder_padding_mask.transpose(0, 1).unsqueeze(-1), 0.0)
         return x, encoder_padding_mask
 
     def _get_next_mask(self, pad_mask):
@@ -179,7 +205,8 @@ class UNetTransformerEncoderLayer(nn.Module):
         :param layer:
         :return:
         """
-        if self.maxpool is None: return pad_mask
+        if self.maxpool is None:
+            return pad_mask
         pad_mask = pad_mask.unsqueeze(2).transpose(1, 2)
         non_pad_mask = self.maxpool((~pad_mask).float().contiguous()).bool()  # ~ is logical NOT
         pad_mask = ~non_pad_mask.squeeze(1)

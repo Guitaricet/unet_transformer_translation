@@ -19,7 +19,7 @@ from fairseq.models import (
     FairseqEncoder,
     FairseqEncoderDecoderModel,
     register_model,
-    register_model_architecture
+    register_model_architecture,
 )
 from fairseq.models.transformer import TransformerDecoder
 from fairseq.models.fairseq_encoder import EncoderOut
@@ -164,12 +164,8 @@ class UnetTransformerModel(FairseqEncoderDecoderModel):
                 raise ValueError(
                     "--share-all-embeddings requires --encoder-embed-dim to match --decoder-embed-dim"
                 )
-            if args.decoder_embed_path and (
-                args.decoder_embed_path != args.encoder_embed_path
-            ):
-                raise ValueError(
-                    "--share-all-embeddings not compatible with --decoder-embed-path"
-                )
+            if args.decoder_embed_path and (args.decoder_embed_path != args.encoder_embed_path):
+                raise ValueError("--share-all-embeddings not compatible with --decoder-embed-path")
             encoder_embed_tokens = build_embedding(
                 src_dict, args.encoder_embed_dim, args.encoder_embed_path
             )
@@ -273,16 +269,17 @@ class UNetTransformerEncoder(FairseqEncoder):
 
     def __init__(self, args, dictionary, embed_tokens):
         super().__init__(dictionary)
-        if args.encoder_layers % 2: raise ValueError('number of layers shoud be divisible by 2')
+        if args.encoder_layers % 2:
+            raise ValueError("number of layers shoud be divisible by 2")
 
         embed_dim = embed_tokens.embedding_dim  # same as args.encoder_embed_dim
         self.padding_idx = embed_tokens.padding_idx
         self.max_source_positions = args.max_source_positions
-        self.return_all_hiddens = getattr(args, 'return_all_hiddens', False)
+        self.return_all_hiddens = getattr(args, "return_all_hiddens", False)
         self.num_layers = args.encoder_layers
         self.dropout = args.dropout
         if getattr(args, "layer_wise_attention", False):
-            raise ValueError('UNetTransformer does not support layer wise attention')
+            raise ValueError("UNetTransformer does not support layer wise attention")
 
         self.embed_tokens = embed_tokens
 
@@ -300,19 +297,25 @@ class UNetTransformerEncoder(FairseqEncoder):
         )
 
         # build UNetTransformer stacks
-        model_dim, ffn_hidden, n_heads = embed_dim, args.encoder_ffn_embed_dim, args.encoder_attention_heads
+        model_dim, ffn_hidden, n_heads = (
+            embed_dim,
+            args.encoder_ffn_embed_dim,
+            args.encoder_attention_heads,
+        )
 
         self.input_layer = UNetTransformerEncoderLayer(
-            args, 'same', model_dim, model_dim, ffn_hidden, conv_skip_connection=True
+            args, "same", model_dim, model_dim, ffn_hidden, conv_skip_connection=True
         )
 
         self.down_layers = []
         for i in range(self.num_layers // 2 - 1):
             input_dim = model_dim  # layer should be compativle with previous model_dim
-            model_dim = round(model_dim * math.sqrt(2)) // n_heads * n_heads  # ensure divisibility by n_heads
+            model_dim = (
+                round(model_dim * math.sqrt(2)) // n_heads * n_heads
+            )  # ensure divisibility by n_heads
             ffn_hidden = round(ffn_hidden * math.sqrt(2)) // n_heads * n_heads
 
-            layer = UNetTransformerEncoderLayer(args, 'down', input_dim, model_dim, ffn_hidden)
+            layer = UNetTransformerEncoderLayer(args, "down", input_dim, model_dim, ffn_hidden)
             self.down_layers.append(layer)
 
         # use the same layer sizes in reverse for 'up' layers
@@ -322,7 +325,7 @@ class UNetTransformerEncoder(FairseqEncoder):
             model_dim = down_layer.input_dim
             ffn_hidden = down_layer.ffn_hidden
 
-            layer = UNetTransformerEncoderLayer(args, 'up', input_dim, model_dim, ffn_hidden)
+            layer = UNetTransformerEncoderLayer(args, "up", input_dim, model_dim, ffn_hidden)
             self.up_layers.append(layer)
 
         # it is easier to first crease lists of layers and then to wrap them with ModuleList
@@ -332,7 +335,7 @@ class UNetTransformerEncoder(FairseqEncoder):
         self.up_layers = nn.ModuleList(self.up_layers)
 
         self.output_layer = UNetTransformerEncoderLayer(
-            args, 'same', model_dim, model_dim, ffn_hidden, conv_skip_connection=True
+            args, "same", model_dim, model_dim, ffn_hidden, conv_skip_connection=True
         )
 
         assert self.num_layers == 2 + len(self.down_layers) + len(self.up_layers)
@@ -381,7 +384,8 @@ class UNetTransformerEncoder(FairseqEncoder):
                   hidden states of shape `(src_len, batch, embed_dim)`.
                   Only populated if *return_all_hiddens* is True.
         """
-        if self.return_all_hiddens: return_all_hiddens = True
+        if self.return_all_hiddens:
+            return_all_hiddens = True
 
         x, encoder_embedding = self.forward_embedding(src_tokens)
         x = x.transpose(0, 1)  # B x T x C -> T x B x C
@@ -391,29 +395,38 @@ class UNetTransformerEncoder(FairseqEncoder):
         encoder_states = [] if return_all_hiddens else None
 
         # input layer
-        x, padding_mask = self.input_layer(x, encoder_padding_mask)  # 'same' layer does not change the mask
-        if return_all_hiddens: encoder_states.append(x)
+        # 'same' layer does not change the mask
+        x, padding_mask = self.input_layer(x, encoder_padding_mask)
+        if return_all_hiddens:
+            encoder_states.append(x)
 
         # down layers
-        layer_padding_masks = []  # required for 'up' layers to compute transposed conv output shape
+        # required for 'up' layers to compute transposed conv output shape
+        layer_padding_masks = ([])
         down_states = []
         for layer in self.down_layers:
-            layer_padding_masks.append(padding_mask)  # ignore the last padding_mask, we don't need it
+            layer_padding_masks.append(
+                padding_mask
+            )  # ignore the last padding_mask, we don't need it
             x, padding_mask = layer(x, padding_mask)
 
             down_states.append(x)
-            if return_all_hiddens: encoder_states.append(x)
+            if return_all_hiddens:
+                encoder_states.append(x)
 
-        for i, layer in enumerate(self.up_layers, 1):
+        for i, layer in enumerate(self.up_layers, 1):  # NOTE: i starts iteration = 1, not = 0
             padding_mask = layer_padding_masks[-i]
 
-            if i > 1: x = x + down_states[-i]  # unet residual, down_states[-i] == x if i==1
+            if i > 1:
+                x = x + down_states[-i]  # unet residual, down_states[-i] == x if i==1
             x, _ = layer(x, padding_mask)
 
-            if return_all_hiddens: encoder_states.append(x)
+            if return_all_hiddens:
+                encoder_states.append(x)
 
         # padding_mask == layer_padding_masks[0] == initial padding mask
-        x, _ = self.output_layer(x, encoder_padding_mask)  # output layer has the same mask as input layer
+        # output layer has the same mask as input layer
+        x, _ = self.output_layer(x, encoder_padding_mask)
         if return_all_hiddens:
             encoder_states.append(x)
             assert len(encoder_states) == self.num_layers
@@ -505,9 +518,7 @@ def base_architecture(args):
     args.encoder_learned_pos = getattr(args, "encoder_learned_pos", False)
     args.decoder_embed_path = getattr(args, "decoder_embed_path", None)
     args.decoder_embed_dim = getattr(args, "decoder_embed_dim", args.encoder_embed_dim)
-    args.decoder_ffn_embed_dim = getattr(
-        args, "decoder_ffn_embed_dim", args.encoder_ffn_embed_dim
-    )
+    args.decoder_ffn_embed_dim = getattr(args, "decoder_ffn_embed_dim", args.encoder_ffn_embed_dim)
     args.decoder_layers = getattr(args, "decoder_layers", 6)
     args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 8)
     args.decoder_normalize_before = getattr(args, "decoder_normalize_before", False)
@@ -522,17 +533,13 @@ def base_architecture(args):
         args, "share_decoder_input_output_embed", False
     )
     args.share_all_embeddings = getattr(args, "share_all_embeddings", False)
-    args.no_token_positional_embeddings = getattr(
-        args, "no_token_positional_embeddings", False
-    )
+    args.no_token_positional_embeddings = getattr(args, "no_token_positional_embeddings", False)
     args.adaptive_input = getattr(args, "adaptive_input", False)
     args.no_cross_attention = getattr(args, "no_cross_attention", False)
     args.cross_self_attention = getattr(args, "cross_self_attention", False)
     args.layer_wise_attention = getattr(args, "layer_wise_attention", False)
 
-    args.decoder_output_dim = getattr(
-        args, "decoder_output_dim", args.decoder_embed_dim
-    )
+    args.decoder_output_dim = getattr(args, "decoder_output_dim", args.decoder_embed_dim)
     args.decoder_input_dim = getattr(args, "decoder_input_dim", args.decoder_embed_dim)
 
     args.no_scale_embedding = getattr(args, "no_scale_embedding", False)

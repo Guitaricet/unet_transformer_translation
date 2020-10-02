@@ -15,21 +15,20 @@ def timeitnow(fn, n_repeats=10):
         times.append(tok - tik)
     return np.mean(times), np.var(times)
 
+
 parser = options.get_training_parser()
 args = options.parse_args_and_arch(parser)
-args.arch = 'unet_transformer'
+args.arch = "unet_transformer"
 
-DEVICE = torch.device(
-    'cuda' if torch.cuda.is_available() and not args.cpu else 'cpu'
-)
+DEVICE = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
 
-if DEVICE == torch.device('cpu'):
-    print('running on CPU')
+if DEVICE == torch.device("cpu"):
+    print("running on CPU")
 
 unet_model = tasks.setup_task(args).build_model(args).to(DEVICE)
 unet_encoder = unet_model.encoder
 
-args.arch = 'transformer'
+args.arch = "transformer"
 args.encoder_layerdrop = False
 transformer_model = tasks.setup_task(args).build_model(args).to(DEVICE)
 transformer_encoder = transformer_model.encoder
@@ -65,19 +64,19 @@ def call_layer(layer):
 # profiling:
 
 _mean, _var = timeitnow(lambda: call_model(unet_model))
-print(f'Unet model       : {_mean, _var}')
+print(f"Unet model       : {_mean, _var}")
 
 _mean, _var = timeitnow(lambda: call_model(transformer_model))
-print(f'Transformer model: {_mean, _var}')
+print(f"Transformer model: {_mean, _var}")
 
 _mean, _var = timeitnow(lambda: call_encoder(unet_encoder))
-print(f'Unet encoder       : {_mean, _var}')
+print(f"Unet encoder       : {_mean, _var}")
 
 _mean, _var = timeitnow(lambda: call_encoder(transformer_encoder))
-print(f'Transformer encoder: {_mean, _var}')
+print(f"Transformer encoder: {_mean, _var}")
 
 _mean, _var = timeitnow(lambda: call_layer(unet_encoder.input_layer))
-print(f'Unet input layer   : {_mean, _var}')
+print(f"Unet input layer   : {_mean, _var}")
 
 _mean, _var = timeitnow(lambda: call_layer(transformer_encoder.layers[0]))
-print(f'Transformer layer  : {_mean, _var}')
+print(f"Transformer layer  : {_mean, _var}")
