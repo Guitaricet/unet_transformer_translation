@@ -39,7 +39,7 @@ class UNetTransformerEncoderLayer(nn.Module):
         model_dim=None,
         ffn_hidden=None,
         conv_skip_connection=False,
-        depthwise_conv=True,
+        depthwise_conv=False,
     ):
         super().__init__()
 
