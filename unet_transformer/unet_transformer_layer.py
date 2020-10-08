@@ -85,11 +85,14 @@ class UNetTransformerEncoderLayer(nn.Module):
         self.conv_norm = LayerNorm(self.model_dim)
 
         self.self_attn_layer_norm = LayerNorm(self.model_dim)
+
         self.self_attn = MultiheadAttention(
             self.model_dim,
             args.encoder_attention_heads,
             dropout=args.attention_dropout,
             self_attention=True,
+            kdim=self.input_dim,
+            vdim=self.input_dim,
         )
 
         self.dropout = args.dropout
@@ -156,13 +159,13 @@ class UNetTransformerEncoderLayer(nn.Module):
 
                 x = self.conv(x, output_size=output_size)
 
-            x = self.conv_out(x.transpose(1, 2)).transpose(1, 2)
+            x = self.conv_out(x.transpose(1, 2)).transpose(1, 2)  # input_dim -> model_dim
 
             if self.type_ == "down":
-                x = self.maxpool(x.contiguous())
+                x = self.maxpool(x.contiguous())  # seq_len / 2
                 encoder_padding_mask = self._get_next_mask(encoder_padding_mask)
 
-            x = x.permute(2, 0, 1)  # (seq_len, batch, embed_dim)
+            x = x.permute(2, 0, 1)  # (seq_len / 2, batch, embed_dim)
 
             # only possible if type_=='same'
             x = residual + x if self.conv_skip_connection else x
