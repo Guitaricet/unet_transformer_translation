@@ -136,6 +136,7 @@ class UNetTransformerEncoderLayer(nn.Module):
             encoded output of shape `(seq_len, batch, embed_dim)`
         """
         seq_len, batch_size, embed_dim = x.shape
+        input_kv = x  # used for keys and values in self-attention
 
         # Maybe Convolution (double or half over time axis)
 
@@ -175,8 +176,8 @@ class UNetTransformerEncoderLayer(nn.Module):
 
         x, _ = self.self_attn(
             query=x,
-            key=x,
-            value=x,
+            key=input_kv,
+            value=input_kv,
             key_padding_mask=encoder_padding_mask,
             attn_mask=attn_mask,
         )
