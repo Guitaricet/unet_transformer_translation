@@ -409,12 +409,13 @@ class UNetTransformerEncoder(FairseqEncoder):
 
         # down layers
         # required for 'up' layers to compute transposed conv output shape
-        layer_padding_masks = ([])
+        layer_padding_masks = []
         down_states = []
         for layer in self.down_layers:
             layer_padding_masks.append(
                 padding_mask
             )  # ignore the last padding_mask, we don't need it
+
             x, padding_mask = layer(x, padding_mask)
 
             down_states.append(x)
