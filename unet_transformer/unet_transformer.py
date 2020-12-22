@@ -282,11 +282,15 @@ class UNetTransformerEncoder(FairseqEncoder):
         embed_dim = embed_tokens.embedding_dim  # same as args.encoder_embed_dim
         self.padding_idx = embed_tokens.padding_idx
         self.max_source_positions = args.max_source_positions
-        self.return_all_hiddens = getattr(args, "return_all_hiddens", False)
+
+        return_all_hiddens = getattr(args, "return_all_hiddens", False)
+        if return_all_hiddens:
+            raise ValueError("return all hiddens is not supported")
+
         self.num_layers = args.encoder_layers
         self.dropout = args.dropout
         if getattr(args, "layer_wise_attention", False):
-            raise ValueError("UNetTransformer does not support layer wise attention")
+            raise ValueError("UNetTransformer does not support layer-wise attention")
 
         self.embed_tokens = embed_tokens
 
@@ -310,40 +314,18 @@ class UNetTransformerEncoder(FairseqEncoder):
             args.encoder_attention_heads,
         )
 
-        self.input_layer = UNetTransformerEncoderLayer(
-            args, "same", model_dim, model_dim, ffn_hidden, conv_skip_connection=True
-        )
+        unet_dict = self.build_unet_stacks(args, model_dim, ffn_hidden, n_heads)
 
-        self.down_layers = []
-        for i in range(self.num_layers // 2 - 1):
-            input_dim = model_dim  # layer should be compativle with previous model_dim
-            model_dim = (
-                round(model_dim * math.sqrt(2)) // n_heads * n_heads
-            )  # ensure divisibility by n_heads
-            ffn_hidden = round(ffn_hidden * math.sqrt(2)) // n_heads * n_heads
-
-            layer = UNetTransformerEncoderLayer(args, "down", input_dim, model_dim, ffn_hidden)
-            self.down_layers.append(layer)
-
-        # use the same layer sizes in reverse for 'up' layers
-        self.up_layers = []
-        for down_layer in reversed(self.down_layers):
-            input_dim = down_layer.model_dim  # up input dim is down model dim
-            model_dim = down_layer.input_dim
-            ffn_hidden = down_layer.ffn_hidden
-
-            layer = UNetTransformerEncoderLayer(args, "up", input_dim, model_dim, ffn_hidden)
-            self.up_layers.append(layer)
+        self.input_layer = unet_dict["input_layer"]
+        self.down_layers = unet_dict["down_layers"]
+        self.up_layers = unet_dict["up_layers"]
+        self.output_layer = unet_dict["output_layer"]
 
         # it is easier to first crease lists of layers and then to wrap them with ModuleList
         # than to make up_layers and down_layers ModuleList from the beginning
         # because we use self.down_layers parameters to create up layers
         self.down_layers = nn.ModuleList(self.down_layers)
         self.up_layers = nn.ModuleList(self.up_layers)
-
-        self.output_layer = UNetTransformerEncoderLayer(
-            args, "same", model_dim, model_dim, ffn_hidden, conv_skip_connection=True
-        )
 
         assert self.num_layers == 2 + len(self.down_layers) + len(self.up_layers)
 
@@ -362,6 +344,104 @@ class UNetTransformerEncoder(FairseqEncoder):
             x = self.layernorm_embedding(x)
         x = F.dropout(x, p=self.dropout, training=self.training)
         return x, embed
+
+    def build_unet_stacks(self, args, model_dim, ffn_hidden, n_heads):
+        """Build up and down stacks and also input and output layers.
+
+        Input and output layers are U-Net transformer blocks without the compression over the seq_len.
+        This works better compared to a pure U-Net architecture.
+
+        Args:
+            args (argparse.Namespace): passed further into the UNetTransformerEncoderLayer constructors.
+            model_dim (int): hidden size of the attention
+            ffn_hidden (int): hidden size of the ffn network that follows attention
+            n_heads (int): number of attention heads
+
+        Returns:
+            dict with keys
+                input_layer: UNetTransformerEncoderLayer
+                down_layers: List[UNetTransformerEncoderLayer]
+                up_layers: List[UNetTransformerEncoderLayer]
+                output_layer: UNetTransformerEncoderLayer
+
+        """
+        input_layer = UNetTransformerEncoderLayer(
+            args, "same", model_dim, model_dim, ffn_hidden, conv_skip_connection=True
+        )
+
+        down_layers = []
+        for i in range(self.num_layers // 2 - 1):
+            input_dim = model_dim  # layer should be compativle with previous model_dim
+            model_dim = (
+                round(model_dim * math.sqrt(2)) // n_heads * n_heads
+            )  # ensure divisibility by n_heads
+            ffn_hidden = round(ffn_hidden * math.sqrt(2)) // n_heads * n_heads
+
+            layer = UNetTransformerEncoderLayer(args, "down", input_dim, model_dim, ffn_hidden)
+            down_layers.append(layer)
+
+        # use the same layer sizes in reverse for 'up' layers
+        up_layers = []
+        for down_layer in reversed(down_layers):
+            input_dim = down_layer.model_dim  # up input dim is down model dim
+            model_dim = down_layer.input_dim
+            ffn_hidden = down_layer.ffn_hidden
+
+            layer = UNetTransformerEncoderLayer(args, "up", input_dim, model_dim, ffn_hidden)
+            up_layers.append(layer)
+
+        output_layer = UNetTransformerEncoderLayer(
+            args, "same", model_dim, model_dim, ffn_hidden, conv_skip_connection=True
+        )
+
+        return {
+            "input_layer": input_layer,
+            "down_layers": down_layers,
+            "up_layers": up_layers,
+            "output_layer": output_layer,
+        }
+
+    def forward_unet(self, x, encoder_padding_mask):
+        """Forward the blocks of U-Net transformer.
+
+        Note that the order of dimensions in x and encdoer_padding_mask is different
+
+        Args:
+            x: torch.FloatTensor[seq_len, batch_size, hidden]
+            encoder_padding_mask: torch.BoolTensor[batch_size, seq_len]
+
+        Returns:
+            torch.FloatTensor[seq_len, batch_size, hidden]
+        """
+        # input layer
+        # 'same' layer does not change the mask
+        x, padding_mask = self.input_layer(x, encoder_padding_mask)
+
+        # down layers
+        # required for 'up' layers to compute transposed conv output shape
+        layer_padding_masks = []
+        down_states = []
+        for layer in self.down_layers:
+            layer_padding_masks.append(
+                padding_mask
+            )  # ignore the last padding_mask, we don't need it
+
+            x, padding_mask = layer(x, padding_mask)
+
+            down_states.append(x)
+
+        for i, layer in enumerate(self.up_layers, 1):  # NOTE: i starts iteration = 1, not = 0
+            padding_mask = layer_padding_masks[-i]
+
+            if i > 1:
+                x = x + down_states[-i]  # unet residual, down_states[-i] == x if i==1
+            x, _ = layer(x, padding_mask)
+
+        # padding_mask == layer_padding_masks[0] == initial padding mask
+        # output layer has the same mask as input layer
+        x, _ = self.output_layer(x, encoder_padding_mask)
+
+        return x
 
     def forward(
         self,
@@ -391,53 +471,15 @@ class UNetTransformerEncoder(FairseqEncoder):
                   hidden states of shape `(src_len, batch, embed_dim)`.
                   Only populated if *return_all_hiddens* is True.
         """
-        if self.return_all_hiddens:
-            return_all_hiddens = True
-
         x, encoder_embedding = self.forward_embedding(src_tokens)
         x = x.transpose(0, 1)  # B x T x C -> T x B x C
 
-        # compute padding mask
+        # U-Net part:
         encoder_padding_mask = src_tokens.eq(self.padding_idx)
-        encoder_states = [] if return_all_hiddens else None
+        x = self.forward_unet(x, encoder_padding_mask)
 
-        # input layer
-        # 'same' layer does not change the mask
-        x, padding_mask = self.input_layer(x, encoder_padding_mask)
-        if return_all_hiddens:
-            encoder_states.append(x)
-
-        # down layers
-        # required for 'up' layers to compute transposed conv output shape
-        layer_padding_masks = []
-        down_states = []
-        for layer in self.down_layers:
-            layer_padding_masks.append(
-                padding_mask
-            )  # ignore the last padding_mask, we don't need it
-
-            x, padding_mask = layer(x, padding_mask)
-
-            down_states.append(x)
-            if return_all_hiddens:
-                encoder_states.append(x)
-
-        for i, layer in enumerate(self.up_layers, 1):  # NOTE: i starts iteration = 1, not = 0
-            padding_mask = layer_padding_masks[-i]
-
-            if i > 1:
-                x = x + down_states[-i]  # unet residual, down_states[-i] == x if i==1
-            x, _ = layer(x, padding_mask)
-
-            if return_all_hiddens:
-                encoder_states.append(x)
-
-        # padding_mask == layer_padding_masks[0] == initial padding mask
-        # output layer has the same mask as input layer
-        x, _ = self.output_layer(x, encoder_padding_mask)
-        if return_all_hiddens:
-            encoder_states.append(x)
-            assert len(encoder_states) == self.num_layers
+        # if not return_all hiddens, encoder states are expected to be an empty list
+        encoder_states = []
 
         return EncoderOut(
             encoder_out=x,  # T x B x C
@@ -541,9 +583,7 @@ def base_architecture(args):
     args.dropout = getattr(args, "dropout", 0.1)
     args.adaptive_softmax_cutoff = getattr(args, "adaptive_softmax_cutoff", None)
     args.adaptive_softmax_dropout = getattr(args, "adaptive_softmax_dropout", 0)
-    args.share_decoder_input_output_embed = getattr(
-        args, "share_decoder_input_output_embed", False
-    )
+    args.share_decoder_input_output_embed = getattr(args, "share_decoder_input_output_embed", False)
     args.share_all_embeddings = getattr(args, "share_all_embeddings", False)
     args.no_token_positional_embeddings = getattr(args, "no_token_positional_embeddings", False)
     args.adaptive_input = getattr(args, "adaptive_input", False)
