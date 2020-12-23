@@ -279,6 +279,7 @@ class UNetTransformerEncoder(FairseqEncoder):
         if args.encoder_layers % 2:
             raise ValueError("number of layers shoud be divisible by 2")
 
+        # Transformer Encoder boilerplate
         embed_dim = embed_tokens.embedding_dim  # same as args.encoder_embed_dim
         self.padding_idx = embed_tokens.padding_idx
         self.max_source_positions = args.max_source_positions
@@ -307,7 +308,7 @@ class UNetTransformerEncoder(FairseqEncoder):
             else None
         )
 
-        # build UNetTransformer stacks
+        # U-Net Transformer Encoder
         model_dim, ffn_hidden, n_heads = (
             embed_dim,
             args.encoder_ffn_embed_dim,
@@ -329,7 +330,7 @@ class UNetTransformerEncoder(FairseqEncoder):
 
         assert self.num_layers == 2 + len(self.down_layers) + len(self.up_layers)
 
-        # VANILLA BELOW --------
+        # More Transformer Encoder boilerplate
         if getattr(args, "layernorm_embedding", False):
             self.layernorm_embedding = LayerNorm(embed_dim)
         else:
@@ -560,7 +561,7 @@ def Embedding(num_embeddings, embedding_dim, padding_idx):
 
 
 # Register in fairseq
-
+# Remember to add new architectures to __init__
 
 @register_model_architecture("unet_transformer", "unet_transformer")
 def base_architecture(args):

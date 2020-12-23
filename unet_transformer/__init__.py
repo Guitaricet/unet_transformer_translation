@@ -4,3 +4,4 @@ from .unet_transformer import (
 )
 
 from .unet_transformer_layer import UNetTransformerEncoderLayer
+from .unet_transformer_2col import UnetTransformer2ColModel
